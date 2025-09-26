@@ -24,6 +24,7 @@ func RegisterRoutes() *mux.Router{
 
 	category := router.PathPrefix("/api/category").Subrouter()
 	category.HandleFunc("/{{id}}", handlers.GetCategorybyId).Methods("GET")
+	category.HandleFunc("/{{id}}", handlers.UpdateCategory).Methods("PUT")
 	category.HandleFunc("", handlers.CreateCategory).Methods("POST")
 
 	//routes untuk Category Functionality
