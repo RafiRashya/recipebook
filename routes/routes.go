@@ -5,7 +5,7 @@ import (
 	"go-rest-modul/handlers"
 )
 
-func RegisterRoutes() *mux.Router{
+func RegisterRoutes() *mux.Router {
 	router := mux.NewRouter().StrictSlash(true)
 
 	// Recipe Routes
@@ -23,8 +23,9 @@ func RegisterRoutes() *mux.Router{
 	recipes.HandleFunc("/category/{category_id}", handlers.FilterByCategoryHandler).Methods("GET")
 
 	category := router.PathPrefix("/api/category").Subrouter()
-	category.HandleFunc("/{{id}}", handlers.GetCategorybyId).Methods("GET")
-	category.HandleFunc("/{{id}}", handlers.UpdateCategory).Methods("PUT")
+	category.HandleFunc("/{id}", handlers.GetCategorybyId).Methods("GET")
+	category.HandleFunc("/{id}", handlers.UpdateCategory).Methods("PUT")
+	category.HandleFunc("/{id}", handlers.DeleteCategory).Methods("DELETE")
 	category.HandleFunc("", handlers.CreateCategory).Methods("POST")
 
 	//routes untuk Category Functionality

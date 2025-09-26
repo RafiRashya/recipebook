@@ -136,9 +136,21 @@ func AddRecipeHandler(w http.ResponseWriter, r *http.Request) {
 func UpdateRecipeHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	var recipeId = mux.Vars(r)["id"]
-	var recipe models.Recipe
+	var existingRecipe models.Recipe
 
-	if err := database.DB.First(&recipe, recipeId).Error; err != nil {
+	// Validasi parameter ID
+	if recipeId == "" {
+		response := Response{
+			Status:  "error",
+			Message: "Recipe ID is required",
+		}
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+
+	// Cari recipe yang akan diupdate
+	if err := database.DB.First(&existingRecipe, recipeId).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			response := Response{
 				Status:  "error",
@@ -148,30 +160,116 @@ func UpdateRecipeHandler(w http.ResponseWriter, r *http.Request) {
 			json.NewEncoder(w).Encode(response)
 			return
 		}
-		w.WriteHeader(http.StatusInternalServerError)
 		response := Response{
 			Status:  "error",
 			Message: "Database error: " + err.Error(),
 		}
+		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(response)
 		return
 	}
 
-	err := json.NewDecoder(r.Body).Decode(&recipe)
-	if err != nil {
+	// Struct untuk input yang aman
+	var input struct {
+		Title        string `json:"title"`
+		Descriptions string `json:"descriptions"`
+		Instructions string `json:"instructions"`
+		PrepTime     *int   `json:"prep_time"` // pointer untuk optional field
+		CookTime     *int   `json:"cook_time"` // pointer untuk optional field
+		Servings     *int   `json:"servings"`  // pointer untuk optional field
+		ImageURL     string `json:"image_url"`
+		CategoryId   *uint  `json:"category_id"` // pointer untuk optional field
+	}
+
+	// Decode request body ke input struct
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		response := Response{
 			Status:  "error",
-			Message: "Error occured while decoding data :" + err.Error(),
+			Message: "Error occurred while decoding data: " + err.Error(),
 		}
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(response)
 		return
 	}
 
-	if err := database.DB.Model(&recipe).Updates(recipe).Error; err != nil {
+	// Validasi CategoryId jika ada
+	if input.CategoryId != nil && *input.CategoryId != 0 {
+		var categoryExists models.Category
+		if err := database.DB.First(&categoryExists, *input.CategoryId).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				response := Response{
+					Status:  "error",
+					Message: "Category Not Found",
+				}
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(response)
+				return
+			}
+			response := Response{
+				Status:  "error",
+				Message: "Error validating category: " + err.Error(),
+			}
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(response)
+			return
+		}
+	}
+
+	// Update field yang diizinkan secara selektif
+	updates := make(map[string]interface{})
+
+	if input.Title != "" {
+		updates["title"] = input.Title
+	}
+	if input.Descriptions != "" {
+		updates["descriptions"] = input.Descriptions
+	}
+	if input.Instructions != "" {
+		updates["instructions"] = input.Instructions
+	}
+	if input.PrepTime != nil {
+		updates["prep_time"] = *input.PrepTime
+	}
+	if input.CookTime != nil {
+		updates["cook_time"] = *input.CookTime
+	}
+	if input.Servings != nil {
+		updates["servings"] = *input.Servings
+	}
+	if input.ImageURL != "" {
+		updates["image_url"] = input.ImageURL
+	}
+	if input.CategoryId != nil && *input.CategoryId != 0 {
+		updates["category_id"] = *input.CategoryId
+	}
+
+	// Validasi minimal ada field yang diupdate
+	if len(updates) == 0 {
 		response := Response{
 			Status:  "error",
-			Message: "Error occured while updating data :" + err.Error(),
+			Message: "No valid fields provided for update",
+		}
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+
+	// Lakukan update
+	if err := database.DB.Model(&existingRecipe).Updates(updates).Error; err != nil {
+		response := Response{
+			Status:  "error",
+			Message: "Error occurred while updating data: " + err.Error(),
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+
+	// Reload data untuk mendapatkan data terbaru
+	if err := database.DB.Preload("Category").First(&existingRecipe, recipeId).Error; err != nil {
+		response := Response{
+			Status:  "error",
+			Message: "Error loading updated data: " + err.Error(),
 		}
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(response)
@@ -181,7 +279,7 @@ func UpdateRecipeHandler(w http.ResponseWriter, r *http.Request) {
 	response := Response{
 		Status:  "success",
 		Message: "Recipe Updated Successfully",
-		Data:    recipe,
+		Data:    existingRecipe,
 	}
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(response)
@@ -250,7 +348,7 @@ func SearchRecipeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if len(recipes) == 0{
+	if len(recipes) == 0 {
 		response := Response{
 			Status:  "error",
 			Message: "Recipe Not Found",
@@ -333,9 +431,9 @@ func FilterByCategoryHandler(w http.ResponseWriter, r *http.Request) {
 
 	db := database.DB.Model(&models.Recipe{}).Preload("Category")
 
-	if err := db.Find(&recipes, "category_id = ?", categoryId).Error; err != nil{
+	if err := db.Find(&recipes, "category_id = ?", categoryId).Error; err != nil {
 		response := Response{
-			Status: "error",
+			Status:  "error",
 			Message: "error occurred : " + err.Error(),
 		}
 		w.WriteHeader(http.StatusInternalServerError)
@@ -343,9 +441,9 @@ func FilterByCategoryHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if len(recipes) == 0{
+	if len(recipes) == 0 {
 		response := Response{
-			Status: "error",
+			Status:  "error",
 			Message: "Recipe Not Found",
 		}
 		w.WriteHeader(http.StatusNotFound)
@@ -354,9 +452,9 @@ func FilterByCategoryHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response := Response{
-		Status: "success",
+		Status:  "success",
 		Message: "Recipe by Category Found",
-		Data: recipes,
+		Data:    recipes,
 	}
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(response)

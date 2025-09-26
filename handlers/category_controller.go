@@ -236,3 +236,45 @@ func UpdateCategory(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(response)
 }
+
+func DeleteCategory(w http.ResponseWriter, r *http.Request){
+	w.Header().Set("Content-Type", "application/json")
+	var categoryId = mux.Vars(r)["id"]
+	var category models.Category
+
+	if err := database.DB.First(&category, categoryId).Error; err != nil{
+		if errors.Is(err, gorm.ErrRecordNotFound){
+			response := Response{
+				Status: "error",
+				Message: "Category Not Found",
+			}
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(response)
+			return
+		}
+		response := Response{
+			Status: "error",
+			Message: "Error Occure while searching data : " + err.Error(),
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+
+	if err := database.DB.Unscoped().Delete(&category, categoryId).Error; err != nil{
+		response := Response{
+			Status: "error",
+			Message: "An error occured while deleting category" + err.Error(),
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+
+	response := Response{
+		Status: "success",
+		Message: "Cateogry has been deleted successfully",
+	}
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(response)
+}
